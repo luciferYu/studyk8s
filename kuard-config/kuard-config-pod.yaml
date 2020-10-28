@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kuard-config 
+  labels:
+    app: kuard-config
+    tier: kuard-config
+spec:
+  containers:
+    - image: docker.io/dlneintr/kuard:latest
+      name: test-container
+      #imagePullPolicy: Always
+      command:
+        - "/kuard"
+        - "$(EXTRA_PARAM)"
+      env:
+        - name: ANOTHER_PARAM
+          valueFrom: 
+            configMapKeyRef:
+              name: my-config
+              key: another-param
+        - name: EXTRA_PARAM
+          valueFrom: 
+            configMapKeyRef:
+              name: my-config
+              key: extra-param
+      volumeMounts:
+        - name: config-volume
+          mountPath: /config
+  volumes:
+    - name: config-volume
+      configMap:
+        name: my-config
+  restartPolicy: Never  
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: kuard-config-frontend
+  labels:
+    app: kuard-config
+    tier: kuard-config
+spec:
+  type: NodePort 
+  ports:
+  - protocol: "TCP"
+    port: 8080
+    targetPort: 8080
+    #nodePort: 31010
+  selector:
+    app: kuard-config
+    

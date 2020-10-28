@@ -1,0 +1,1470 @@
+关闭防火墙
+systemctl stop  firewalld
+systemctl disable  firewalld
+
+
+安装docker
+
+[root@knode-02 ~]# cat /etc/docker/daemon.json 
+{
+  "registry-mirrors": ["https://5a5582l7.mirror.aliyuncs.com"],
+  "exec-opts":["native.cgroupdriver=systemd"]
+}
+
+systemctl start docker
+systemctl enable docker.service
+
+
+
+
+配置kubernate 阿里云源
+cat <<EOF > /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el7-x86_64/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://mirrors.aliyun.com/kubernetes/yum/doc/yum-key.gpg https://mirrors.aliyun.com/kubernetes/yum/doc/rpm-package-key.gpg
+EOF
+
+setenforce 0
+yum install -y kubelet kubeadm kubectl
+systemctl enable kubelet && systemctl start kubelet
+
+ansible all -i knode -m shell -a "sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab"
+
+
+国内无法访问镜像解决
+在运行 kubeadm init 之前请先执行 kubeadm config images pull 来测试与 gcr.io 的连接
+kubeadm config images list
+	k8s.gcr.io/kube-apiserver:v1.18.1
+	k8s.gcr.io/kube-controller-manager:v1.18.1
+	k8s.gcr.io/kube-scheduler:v1.18.1
+	k8s.gcr.io/kube-proxy:v1.18.1
+	k8s.gcr.io/pause:3.2
+	k8s.gcr.io/etcd:3.4.3-0
+	k8s.gcr.io/coredns:1.6.7
+
+	images=(
+    		kube-apiserver:v1.18.1
+    		kube-controller-manager:v1.18.1
+    		kube-scheduler:v1.18.1
+    		kube-proxy:v1.18.1
+    		pause:3.2
+    		etcd:3.4.3-0
+    		coredns:1.6.7
+	)
+	for imageName in ${images[@]} ; do
+    		docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/${imageName}
+    		docker tag registry.cn-hangzhou.aliyuncs.com/google_containers/${image} k8s.gcr.io/${imageName}
+    		docker rmi registry.cn-hangzhou.aliyuncs.com/google_containers/${imageName}
+	done
+
+
+docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver:v1.18.1
+docker pull registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager:v1.18.1
+
+
+
+## 以上命令不如直接使用 阿里云的源
+kubeadm init --image-repository=registry.cn-hangzhou.aliyuncs.com/google_containers --pod-network-cidr=10.244.0.0/16
+
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 192.168.107.136:6443 --token ps5osq.sxby7chznjt4kvio \
+    --discovery-token-ca-cert-hash sha256:f179d7e31c2d2ba37141b1a75910e00f35ce2d4e55fcda3b03cd3972f83f52c7 
+
+
+# 普通用户
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# root用户 
+export KUBECONFIG=/etc/kubernetes/admin.conf
+echo "export KUBECONFIG=/etc/kubernetes/admin.conf" >> ~/.bash_profile
+source ~/.bash_profile
+
+# 安装网络
+#CNI-Genie can be installed in the following two modes: 失败
+	Genie Complete (Installs genie with the support of multi networking as well as network policy implementation):
+	kubectl apply -f https://raw.githubusercontent.com/Huawei-PaaS/CNI-Genie/master/conf/1.8/genie-complete.yaml
+	Unable to connect to the server: read tcp 192.168.107.136:60302->151.101.0.133:443: read: connection reset by peer
+
+	Genie Plugin-only (Installs genie with multi networking support):  失败
+	kubectl apply -f https://raw.githubusercontent.com/Huawei-PaaS/CNI-Genie/master/conf/1.8/genie-plugin.yaml
+	Unable to connect to the server: read tcp 192.168.107.136:60302->151.101.0.133:443: read: connection reset by peer
+
+
+#flannel
+	For Kubernetes v1.7+    成功
+	kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+		podsecuritypolicy.policy/psp.flannel.unprivileged created
+		clusterrole.rbac.authorization.k8s.io/flannel created
+		clusterrolebinding.rbac.authorization.k8s.io/flannel created
+		serviceaccount/flannel created
+		configmap/kube-flannel-cfg created
+		daemonset.apps/kube-flannel-ds-amd64 created
+		daemonset.apps/kube-flannel-ds-arm64 created
+		daemonset.apps/kube-flannel-ds-arm created
+		daemonset.apps/kube-flannel-ds-ppc64le created
+		daemonset.apps/kube-flannel-ds-s390x created
+
+
+[root@localhost ~]# kubectl --namespace=kube-system get pod
+NAME                                            READY   STATUS    RESTARTS   AGE
+coredns-546565776c-5z2xk                        0/1     Running   0          17m
+coredns-546565776c-7w792                        0/1     Running   0          17m
+etcd-localhost.localdomain                      1/1     Running   0          17m
+kube-apiserver-localhost.localdomain            1/1     Running   0          17m
+kube-controller-manager-localhost.localdomain   1/1     Running   0          17m
+kube-flannel-ds-amd64-chmks                     1/1     Running   0          3m47s
+kube-proxy-jgdmp                                1/1     Running   0          17m
+kube-scheduler-localhost.localdomain            1/1     Running   0          17m
+
+[root@knode-01 ~]# kubectl get node
+NAME       STATUS   ROLES    AGE     VERSION
+knode-01   Ready    master   2m42s   v1.18.0
+knode-02   Ready    <none>   35s     v1.18.0
+knode-03   Ready    <none>   22s     v1.18.0
+
+
+
+在 节点2 和节点3 分别加入集群命令
+kubeadm join 192.168.107.136:6443 --token auu82f.s9z2a914q9f0y8dt \
+    --discovery-token-ca-cert-hash sha256:e263852f7abd98d54ccada0d57ea271478c17673223beae4daf85d03db25fe0d 
+
+
+#重新加入集群 
+[root@knode-02 ~]# kubeadm reset
+[reset] WARNING: Changes made to this host by 'kubeadm init' or 'kubeadm join' will be reverted.
+[reset] Are you sure you want to proceed? [y/N]: y
+
+
+
+#使node成为工作节点
+[root@knode-01 ~]# kubectl label node knode-02 node-role.kubernetes.io/worker=worker
+node/knode-02 labeled
+[root@knode-01 ~]# kubectl get nodes
+NAME       STATUS   ROLES    AGE    VERSION
+knode-01   Ready    master   155m   v1.18.0
+knode-02   Ready    worker   153m   v1.18.0
+knode-03   Ready    <none>   153m   v1.18.0
+
+
+#删除工作节点
+kubectl label nodes  knode-02 node-role.kubernetes.io/worker=worker
+
+
+描述节点信息
+[root@knode-01 kubernetes]# kubectl describe node knode-01
+Name:               knode-01
+Roles:              master
+Labels:             beta.kubernetes.io/arch=amd64
+                    beta.kubernetes.io/os=linux
+                    kubernetes.io/arch=amd64
+                    kubernetes.io/hostname=knode-01
+                    kubernetes.io/os=linux
+                    node-role.kubernetes.io/master=
+Annotations:        kubeadm.alpha.kubernetes.io/cri-socket: /var/run/dockershim.sock
+                    node.alpha.kubernetes.io/ttl: 0
+                    volumes.kubernetes.io/controller-managed-attach-detach: true
+CreationTimestamp:  Fri, 10 Apr 2020 01:02:46 +0800
+Taints:             node-role.kubernetes.io/master:NoSchedule
+Unschedulable:      false
+Lease:
+  HolderIdentity:  knode-01
+  AcquireTime:     <unset>
+  RenewTime:       Fri, 10 Apr 2020 02:57:13 +0800
+Conditions:
+  Type             Status  LastHeartbeatTime                 LastTransitionTime                Reason                       Message
+  ----             ------  -----------------                 ------------------                ------                       -------
+  MemoryPressure   False   Fri, 10 Apr 2020 02:53:15 +0800   Fri, 10 Apr 2020 01:02:41 +0800   KubeletHasSufficientMemory   kubelet has sufficient memory available
+  DiskPressure     False   Fri, 10 Apr 2020 02:53:15 +0800   Fri, 10 Apr 2020 01:02:41 +0800   KubeletHasNoDiskPressure     kubelet has no disk pressure
+  PIDPressure      False   Fri, 10 Apr 2020 02:53:15 +0800   Fri, 10 Apr 2020 01:02:41 +0800   KubeletHasSufficientPID      kubelet has sufficient PID available
+  Ready            True    Fri, 10 Apr 2020 02:53:15 +0800   Fri, 10 Apr 2020 01:02:46 +0800   KubeletReady                 kubelet is posting ready status
+Addresses:
+  InternalIP:  192.168.107.136
+  Hostname:    knode-01
+Capacity:
+  cpu:                2
+  ephemeral-storage:  51175Mi
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             1863104Ki
+  pods:               110
+Allocatable:
+  cpu:                2
+  ephemeral-storage:  48294789041
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             1760704Ki
+  pods:               110
+System Info:
+  Machine ID:                 430a614d95d44d53878bfd4f80c2abe4
+  System UUID:                91454D56-5A46-3EAF-297C-F486283BD3B5
+  Boot ID:                    1b38bd77-abc3-44b0-892d-14a355c9c116
+  Kernel Version:             3.10.0-1062.el7.x86_64
+  OS Image:                   CentOS Linux 7 (Core)
+  Operating System:           linux
+  Architecture:               amd64
+  Container Runtime Version:  docker://19.3.8
+  Kubelet Version:            v1.18.0
+  Kube-Proxy Version:         v1.18.0
+PodCIDR:                      10.244.0.0/24
+PodCIDRs:                     10.244.0.0/24
+Non-terminated Pods:          (7 in total)
+  Namespace                   Name                                CPU Requests  CPU Limits  Memory Requests  Memory Limits  AGE
+  ---------                   ----                                ------------  ----------  ---------------  -------------  ---
+  kube-system                 coredns-546565776c-6m7hk            100m (5%)     0 (0%)      70Mi (4%)        170Mi (9%)     114m
+  kube-system                 coredns-546565776c-v59g2            100m (5%)     0 (0%)      70Mi (4%)        170Mi (9%)     114m
+  kube-system                 etcd-knode-01                       0 (0%)        0 (0%)      0 (0%)           0 (0%)         114m
+  kube-system                 kube-apiserver-knode-01             250m (12%)    0 (0%)      0 (0%)           0 (0%)         114m
+  kube-system                 kube-controller-manager-knode-01    200m (10%)    0 (0%)      0 (0%)           0 (0%)         114m
+  kube-system                 kube-proxy-9vmrl                    0 (0%)        0 (0%)      0 (0%)           0 (0%)         114m
+  kube-system                 kube-scheduler-knode-01             100m (5%)     0 (0%)      0 (0%)           0 (0%)         114m
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests    Limits
+  --------           --------    ------
+  cpu                750m (37%)  0 (0%)
+  memory             140Mi (8%)  340Mi (19%)
+  ephemeral-storage  0 (0%)      0 (0%)
+  hugepages-1Gi      0 (0%)      0 (0%)
+  hugepages-2Mi      0 (0%)      0 (0%)
+Events:              <none>
+
+[root@knode-01 kubernetes]# kubectl version
+Client Version: version.Info{Major:"1", Minor:"18", GitVersion:"v1.18.0", GitCommit:"9e991415386e4cf155a24b1da15becaa390438d8", GitTreeState:"clean", BuildDate:"2020-03-25T14:58:59Z", GoVersion:"go1.13.8", Compiler:"gc", Platform:"linux/amd64"}
+Server Version: version.Info{Major:"1", Minor:"18", GitVersion:"v1.18.1", GitCommit:"7879fc12a63337efff607952a323df90cdc7a335", GitTreeState:"clean", BuildDate:"2020-04-08T17:30:47Z", GoVersion:"go1.13.9", Compiler:"gc", Platform:"linux/amd64"}
+
+[root@knode-01 kubernetes]# kubectl get node
+NAME       STATUS   ROLES    AGE    VERSION
+knode-01   Ready    master   131m   v1.18.0
+knode-02   Ready    <none>   129m   v1.18.0
+knode-03   Ready    <none>   129m   v1.18.0
+
+#创建一个部署
+[root@knode-01 kubernetes]# kubectl create deployment kubernetes-bootcamp --image=gcr.io/google-samples/kubernetes-bootcamp:v1  # 国内无法访问
+deployment.apps/kubernetes-bootcamp created
+
+kubectl create deployment kubernetes-bootcamp4 --image=docker.io/jocatalin/kubernetes-bootcamp:v1  # 国内可以访问
+
+#查询一个部署
+[root@knode-01 kubernetes]# kubectl get deployments
+NAME                  READY   UP-TO-DATE   AVAILABLE   AGE
+kubernetes-bootcamp   0/1     1            0           13s
+
+# 启动一个 proxy
+[root@knode-01 kubernetes]# kubectl proxy
+Starting to serve on 127.0.0.1:8001
+
+#再另一个窗口查看 proxy version
+[root@knode-01 ~]# curl http://localhost:8001/version
+{
+  "major": "1",
+  "minor": "18",
+  "gitVersion": "v1.18.1",
+  "gitCommit": "7879fc12a63337efff607952a323df90cdc7a335",
+  "gitTreeState": "clean",
+  "buildDate": "2020-04-08T17:30:47Z",
+  "goVersion": "go1.13.9",
+  "compiler": "gc",
+  "platform": "linux/amd64"
+}
+
+export POD_NAME=$(kubectl get pods -o go-template --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')
+echo Name of the Pod: $POD_NAME
+
+
+
+kubectl get - 列出资源
+kubectl describe - 显示有关资源的详细信息
+kubectl logs - 打印 pod 和其中容器的日志
+kubectl exec - 在 pod 中的容器上执行命令
+
+# 查询pods
+[root@knode-01 ~]# kubectl get pods
+NAME                                   READY   STATUS             RESTARTS   AGE
+kubernetes-bootcamp-6f6656d949-9gsj4   0/1     ImagePullBackOff   0          16m
+
+查询pods 详细信息
+[root@knode-01 ~]# kubectl describe pods
+Name:         kubernetes-bootcamp-6f6656d949-9gsj4
+Namespace:    default
+Priority:     0
+Node:         knode-02/192.168.107.137
+Start Time:   Fri, 10 Apr 2020 03:17:15 +0800
+Labels:       app=kubernetes-bootcamp
+              pod-template-hash=6f6656d949
+Annotations:  <none>
+Status:       Pending
+IP:           10.244.1.2
+IPs:
+  IP:           10.244.1.2
+Controlled By:  ReplicaSet/kubernetes-bootcamp-6f6656d949
+Containers:
+  kubernetes-bootcamp:
+    Container ID:   
+    Image:          gcr.io/google-samples/kubernetes-bootcamp:v1
+    Image ID:       
+    Port:           <none>
+    Host Port:      <none>
+    State:          Waiting
+      Reason:       ImagePullBackOff
+    Ready:          False
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from default-token-vdvp2 (ro)
+Conditions:
+  Type              Status
+  Initialized       True 
+  Ready             False 
+  ContainersReady   False 
+  PodScheduled      True 
+Volumes:
+  default-token-vdvp2:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  default-token-vdvp2
+    Optional:    false
+QoS Class:       BestEffort
+Node-Selectors:  <none>
+Tolerations:     node.kubernetes.io/not-ready:NoExecute for 300s
+                 node.kubernetes.io/unreachable:NoExecute for 300s
+Events:
+  Type     Reason     Age                   From               Message
+  ----     ------     ----                  ----               -------
+  Normal   Scheduled  17m                   default-scheduler  Successfully assigned default/kubernetes-bootcamp-6f6656d949-9gsj4 to knode-02
+  Normal   Pulling    15m (x4 over 17m)     kubelet, knode-02  Pulling image "gcr.io/google-samples/kubernetes-bootcamp:v1"
+  Warning  Failed     14m (x4 over 17m)     kubelet, knode-02  Failed to pull image "gcr.io/google-samples/kubernetes-bootcamp:v1": rpc error: code = Unknown desc = Error response from daemon: Get https://gcr.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+  Warning  Failed     14m (x4 over 17m)     kubelet, knode-02  Error: ErrImagePull
+  Normal   BackOff    14m (x6 over 17m)     kubelet, knode-02  Back-off pulling image "gcr.io/google-samples/kubernetes-bootcamp:v1"
+  Warning  Failed     2m16s (x55 over 17m)  kubelet, knode-02  Error: ImagePullBackOff
+
+
+#将pod的名字输入环境变量
+export POD_NAME=$(kubectl get pods -o go-template --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')
+echo Name of the Pod: $POD_NAME
+
+
+# 通过代理 curl pod
+curl http://localhost:8001/api/v1/namespaces/default/pods/$POD_NAME/proxy/
+
+# 查看pods的控制台
+[root@knode-01 ~]# kubectl logs $POD_NAME
+Error from server (BadRequest): container "kubernetes-bootcamp" in pod "kubernetes-bootcamp-6f6656d949-9gsj4" is waiting to start: trying and failing to pull image
+
+
+
+# 删除pod
+kubectl delete pods <pod> --grace-period=0 --force
+
+
+#在pod 里执行命令
+[root@knode-01 ~]# kubectl exec kubernetes-bootcamp4-6b8945cdcc-hmxc4 env
+kubectl exec [POD] [COMMAND] is DEPRECATED and will be removed in a future version. Use kubectl kubectl exec [POD] -- [COMMAND] instead.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+HOSTNAME=kubernetes-bootcamp4-6b8945cdcc-hmxc4
+KUBERNETES_PORT_443_TCP=tcp://10.96.0.1:443
+KUBERNETES_PORT_443_TCP_PROTO=tcp
+KUBERNETES_PORT_443_TCP_PORT=443
+KUBERNETES_PORT_443_TCP_ADDR=10.96.0.1
+KUBERNETES_SERVICE_HOST=10.96.0.1
+KUBERNETES_SERVICE_PORT=443
+KUBERNETES_SERVICE_PORT_HTTPS=443
+KUBERNETES_PORT=tcp://10.96.0.1:443
+NPM_CONFIG_LOGLEVEL=info
+NODE_VERSION=6.3.1
+HOME=/root
+
+
+#在pod 执行交互操作
+kubectl exec -it  kubernetes-bootcamp4-6b8945cdcc-hmxc4 bash 
+
+
+# 获取deployment
+[root@knode-01 ~]# kubectl get deployment
+NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
+kubernetes-bootcamp    0/1     1            0           55m
+kubernetes-bootcamp2   0/1     1            0           24m
+kubernetes-bootcamp3   0/1     1            0           22m
+kubernetes-bootcamp4   1/1     1            1           21m
+
+[root@knode-01 ~]# kubectl delete  deployment kubernetes-bootcamp
+deployment.apps "kubernetes-bootcamp" deleted
+
+[root@knode-01 ~]# kubectl get pods
+NAME                                    READY   STATUS    RESTARTS   AGE
+kubernetes-bootcamp4-6b8945cdcc-hmxc4   1/1     Running   0          22m
+
+
+#service
+ A Service is defined using YAML (preferred) or JSON
+Services allow your applications to receive traffic. Services can be exposed in different ways by specifying a type in the ServiceSpec:
+
+ClusterIP (default) - Exposes the Service on an internal IP in the cluster. This type makes the Service only reachable from within the cluster.
+NodePort - Exposes the Service on the same port of each selected Node in the cluster using NAT. Makes a Service accessible from outside the cluster using <NodeIP>:<NodePort>. Superset of ClusterIP.
+LoadBalancer - Creates an external load balancer in the current cloud (if supported) and assigns a fixed, external IP to the Service. Superset of NodePort.
+ExternalName - Exposes the Service using an arbitrary name (specified by externalName in the spec) by returning a CNAME record with the name. No proxy is used. This type requires v1.7 or higher of kube-dns.
+
+
+Exposing Your App
+# 获取 service
+[root@knode-01 ~]# kubectl get services
+NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.96.0.1    <none>        443/TCP   3h31m
+
+# 通过NodePort方式暴露一个端口
+[root@knode-01 ~]# kubectl expose deployment/kubernetes-bootcamp4 --type="NodePort" --port 8080
+service/kubernetes-bootcamp4 exposed
+
+# 暴露端口后可以在查看 service 
+[root@knode-01 ~]# kubectl get services
+NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+kubernetes             ClusterIP   10.96.0.1       <none>        443/TCP          3h34m
+kubernetes-bootcamp4   NodePort    10.103.70.100   <none>        8080:32309/TCP   43s
+
+# 描述服务
+[root@knode-01 ~]# kubectl describe services/kubernetes-bootcamp4
+Name:                     kubernetes-bootcamp4
+Namespace:                default
+Labels:                   app=kubernetes-bootcamp4
+Annotations:              <none>
+Selector:                 app=kubernetes-bootcamp4
+Type:                     NodePort
+IP:                       10.103.70.100
+Port:                     <unset>  8080/TCP
+TargetPort:               8080/TCP
+NodePort:                 <unset>  32309/TCP
+Endpoints:                10.244.1.3:8080
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+
+export NODE_PORT=$(kubectl get services/kubernetes-bootcamp4 -o go-template='{{(index .spec.ports 0).nodePort}}')
+echo NODE_PORT=$NODE_PORT
+
+#可以看到通过主机的IP和端口已经能够访问 pods里的服务了 ，并且2台work都可以工作了
+[root@knode-01 ~]# curl 192.168.107.137:32309
+Hello Kubernetes bootcamp! | Running on: kubernetes-bootcamp4-6b8945cdcc-hmxc4 | v=1
+[root@knode-01 ~]# curl 192.168.107.138:32309
+Hello Kubernetes bootcamp! | Running on: kubernetes-bootcamp4-6b8945cdcc-hmxc4 | v=1
+
+
+
+[root@knode-01 ~]# kubectl describe deployment
+Name:                   kubernetes-bootcamp4
+Namespace:              default
+CreationTimestamp:      Fri, 10 Apr 2020 03:51:05 +0800
+Labels:                 app=kubernetes-bootcamp4
+Annotations:            deployment.kubernetes.io/revision: 1
+Selector:               app=kubernetes-bootcamp4
+Replicas:               1 desired | 1 updated | 1 total | 1 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        0
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=kubernetes-bootcamp4
+  Containers:
+   kubernetes-bootcamp:
+    Image:        docker.io/jocatalin/kubernetes-bootcamp:v1
+    Port:         <none>
+    Host Port:    <none>
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  <none>
+NewReplicaSet:   kubernetes-bootcamp4-6b8945cdcc (1/1 replicas created)
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  53m   deployment-controller  Scaled up replica set kubernetes-bootcamp4-6b8945cdcc to 1
+
+
+# 按deployment的标签查找
+[root@knode-01 ~]# kubectl get pods -L run=kubernetes-bootcamp4
+NAME                                    READY   STATUS    RESTARTS   AGE   RUN=KUBERNETES-BOOTCAMP4
+kubernetes-bootcamp4-6b8945cdcc-hmxc4   1/1     Running   0          60m   
+
+[root@knode-01 ~]# kubectl get service -L run=kubernetes-bootcamp4
+NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE     RUN=KUBERNETES-BOOTCAMP4
+kubernetes             ClusterIP   10.96.0.1       <none>        443/TCP          3h49m   
+kubernetes-bootcamp4   NodePort    10.103.70.100   <none>        8080:32309/TCP   16m   
+
+# 输出pod的环境变量
+export POD_NAME=$(kubectl get pods -o go-template --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}')
+echo Name of the Pod: $POD_NAME
+
+# 给pod打上标签
+kubectl label pod $POD_NAME app=v1
+或
+[root@knode-01 ~]# kubectl label pod kubernetes-bootcamp4-6b8945cdcc-hmxc4 app=v1
+error: 'app' already has a value (kubernetes-bootcamp4), and --overwrite is false
+[root@knode-01 ~]# kubectl label pod kubernetes-bootcamp4-6b8945cdcc-hmxc4 app=v1 --overwrite
+pod/kubernetes-bootcamp4-6b8945cdcc-hmxc4 labeled
+
+# 通过describe 可以看到 label已经打上了
+[root@knode-01 ~]# kubectl describe pods kubernetes-bootcamp4-6b8945cdcc-hmxc4
+Name:         kubernetes-bootcamp4-6b8945cdcc-hmxc4
+Namespace:    default
+Priority:     0
+Node:         knode-02/192.168.107.137
+Start Time:   Fri, 10 Apr 2020 03:51:05 +0800
+Labels:       app=v1
+              pod-template-hash=6b8945cdcc
+Annotations:  <none>
+。。。
+
+# 就可以通过label 来获取pods了
+[root@knode-01 ~]# kubectl get pods -l app=v1
+NAME                                    READY   STATUS    RESTARTS   AGE
+kubernetes-bootcamp4-6b8945cdcc-hmxc4   1/1     Running   0          69m
+
+
+# 删除一个服务
+[root@knode-01 ~]# kubectl get service
+NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+kubernetes             ClusterIP   10.96.0.1       <none>        443/TCP          4h
+kubernetes-bootcamp4   NodePort    10.103.70.100   <none>        8080:32309/TCP   26m
+[root@knode-01 ~]# kubectl delete service -l run=kubernetes-bootcamp4
+No resources found
+[root@knode-01 ~]# kubectl delete service kubernetes-bootcamp4
+service "kubernetes-bootcamp4" deleted
+[root@knode-01 ~]# kubectl get service
+NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.96.0.1    <none>        443/TCP   4h1m
+
+# 删除服务后 服务将不可达
+[root@knode-01 ~]# curl http://192.168.107.138:32309/
+curl: (7) Failed connect to 192.168.107.138:32309; Connection refused
+[root@knode-01 ~]# curl http://192.168.107.137:32309/
+curl: (7) Failed connect to 192.168.107.137:32309; Connection refused
+
+# 但是进入pod内部 还是可以访问该服务的
+
+[root@knode-01 ~]# kubectl  exec -it  kubernetes-bootcamp4-6b8945cdcc-hmxc4 -- curl localhost:8080
+Hello Kubernetes bootcamp! | Running on: kubernetes-bootcamp4-6b8945cdcc-hmxc4 | v=1
+
+
+# 扩展 运行多了instance
+#首先需要通过查看deployment
+[root@knode-01 ~]# kubectl get deployments
+NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
+kubernetes-bootcamp4   1/1     1            1           93m
+We should have 1 Pod. If not, run the command again. This shows:
+# 以下解释了 deployment的各个字段的含义
+NAME lists the names of the Deployments in the cluster.
+READY shows the ratio of CURRENT/DESIRED replicas
+UP-TO-DATE displays the number of replicas that have been updated to achieve the desired state.
+AVAILABLE displays how many replicas of the application are available to your users.
+AGE displays the amount of time that the application has been running.
+
+# 获取replicaset 
+[root@knode-01 ~]# kubectl get rs
+NAME                              DESIRED   CURRENT   READY   AGE
+kubernetes-bootcamp4-6b8945cdcc   1         1         1       95m
+#以下解释了字段含义
+Notice that the name of the ReplicaSet is always formatted as [DEPLOYMENT-NAME]-[RANDOM-STRING]. The random string is randomly generated and uses the pod-template-hash as a seed.
+Two important columns of this command are:
+	DESIRED displays the desired number of replicas of the application, which you define when you create the Deployment. This is the desired state.
+	CURRENT displays how many replicas are currently running.
+
+# 现在通过kubectl scale 来进行扩展到4个副本
+[root@knode-01 ~]# kubectl scale deployments/kubernetes-bootcamp4 --replicas=4
+deployment.apps/kubernetes-bootcamp4 scaled
+
+#查看扩展后的结果
+[root@knode-01 ~]# kubectl get deployments
+NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
+kubernetes-bootcamp4   4/4     4            4           99m
+# 通过 -o wide 参数 查看pod
+[root@knode-01 ~]# kubectl get pods -o wide
+NAME                                    READY   STATUS    RESTARTS   AGE   IP           NODE       NOMINATED NODE   READINESS GATES
+kubernetes-bootcamp4-6b8945cdcc-2wbdm   1/1     Running   0          43s   10.244.2.8   knode-03   <none>           <none>
+kubernetes-bootcamp4-6b8945cdcc-bpwnq   1/1     Running   0          43s   10.244.1.8   knode-02   <none>           <none>
+kubernetes-bootcamp4-6b8945cdcc-hmxc4   1/1     Running   0          99m   10.244.1.3   knode-02   <none>           <none>
+kubernetes-bootcamp4-6b8945cdcc-qwgdw   1/1     Running   0          43s   10.244.1.7   knode-02   <none>           <none>
+kubernetes-bootcamp4-6b8945cdcc-rft4j   1/1     Running   0          32m   10.244.2.7   knode-03   <none>           <none>
+
+[root@knode-01 ~]# kubectl get rs
+NAME                              DESIRED   CURRENT   READY   AGE
+kubernetes-bootcamp4-6b8945cdcc   4         4         4       100m
+
+[root@knode-01 ~]# kubectl describe deployments/kubernetes-bootcamp4
+Name:                   kubernetes-bootcamp4
+Namespace:              default
+CreationTimestamp:      Fri, 10 Apr 2020 03:51:05 +0800
+Labels:                 app=kubernetes-bootcamp4
+Annotations:            deployment.kubernetes.io/revision: 1
+Selector:               app=kubernetes-bootcamp4
+Replicas:               4 desired | 4 updated | 4 total | 4 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        0
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=kubernetes-bootcamp4
+  Containers:
+   kubernetes-bootcamp:
+    Image:        docker.io/jocatalin/kubernetes-bootcamp:v1
+    Port:         <none>
+    Host Port:    <none>
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Progressing    True    NewReplicaSetAvailable
+  Available      True    MinimumReplicasAvailable
+OldReplicaSets:  <none>
+NewReplicaSet:   kubernetes-bootcamp4-6b8945cdcc (4/4 replicas created)
+Events:
+  Type    Reason             Age   From                   Message
+  ----    ------             ----  ----                   -------
+  Normal  ScalingReplicaSet  2m7s  deployment-controller  Scaled up replica set kubernetes-bootcamp4-6b8945cdcc to 4
+
+[root@knode-01 ~]# kubectl expose deployment/kubernetes-bootcamp4 --type="NodePort" --port 8080
+service/kubernetes-bootcamp4 exposed
+
+[root@knode-01 ~]# kubectl describe services/kubernetes-bootcamp4
+Name:                     kubernetes-bootcamp4
+Namespace:                default
+Labels:                   app=kubernetes-bootcamp4
+Annotations:              <none>
+Selector:                 app=kubernetes-bootcamp4
+Type:                     NodePort
+IP:                       10.108.169.50
+Port:                     <unset>  8080/TCP
+TargetPort:               8080/TCP
+NodePort:                 <unset>  32482/TCP
+Endpoints:                10.244.1.7:8080,10.244.1.8:8080,10.244.2.7:8080 + 1 more...
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+
+# 收缩扩展
+[root@knode-01 ~]# kubectl scale deployments/kubernetes-bootcamp4 --replicas=2
+deployment.apps/kubernetes-bootcamp4 scaled
+[root@knode-01 ~]# kubectl get pods -o wide
+NAME                                    READY   STATUS        RESTARTS   AGE     IP           NODE       NOMINATED NODE   READINESS GATES
+kubernetes-bootcamp4-6b8945cdcc-2wbdm   1/1     Terminating   0          9m48s   10.244.2.8   knode-03   <none>           <none>
+kubernetes-bootcamp4-6b8945cdcc-bpwnq   1/1     Running       0          9m48s   10.244.1.8   knode-02   <none>           <none>
+kubernetes-bootcamp4-6b8945cdcc-hmxc4   1/1     Running       0          108m    10.244.1.3   knode-02   <none>           <none>
+kubernetes-bootcamp4-6b8945cdcc-qwgdw   1/1     Terminating   0          9m48s   10.244.1.7   knode-02   <none>           <none>
+kubernetes-bootcamp4-6b8945cdcc-rft4j   1/1     Running       0          41m     10.244.2.7   knode-03   <none>           <none>
+
+# 更新应用
+[root@knode-01 ~]# kubectl get deployment
+NAME                  READY   UP-TO-DATE   AVAILABLE   AGE
+kubernetes-bootcamp   4/4     4            4           15m
+
+[root@knode-01 ~]# kubectl get pods
+NAME                                    READY   STATUS    RESTARTS   AGE
+kubernetes-bootcamp-788f6654fc-b6bsg    1/1     Running   0          16m
+kubernetes-bootcamp-788f6654fc-fbgkl    1/1     Running   0          111s
+kubernetes-bootcamp-788f6654fc-gqlq8    1/1     Running   0          111s
+kubernetes-bootcamp-788f6654fc-rq8gn    1/1     Running   0          111s
+kubernetes-bootcamp4-6b8945cdcc-hmxc4   1/1     Running   1          19d
+
+[root@knode-01 ~]# kubectl describe pods
+Name:         kubernetes-bootcamp-788f6654fc-b6bsg
+Namespace:    default
+Priority:     0
+Node:         knode-03/192.168.107.138
+Start Time:   Wed, 29 Apr 2020 04:41:31 +0800
+Labels:       app=kubernetes-bootcamp
+              pod-template-hash=788f6654fc
+Annotations:  <none>
+Status:       Running
+IP:           10.244.0.2
+IPs:
+  IP:           10.244.0.2
+Controlled By:  ReplicaSet/kubernetes-bootcamp-788f6654fc
+Containers:
+  kubernetes-bootcamp:
+    Container ID:   docker://a6aa9ea78865d873e935e5d15472c73d1488f6b7414f7cc1702bbf03d3cfd1e0
+    Image:          docker.io/jocatalin/kubernetes-bootcamp:v1
+    Image ID:       docker-pullable://jocatalin/kubernetes-bootcamp@sha256:0d6b8ee63bb57c5f5b6156f446b3bc3b3c143d233037f3a2f00e279c8fcc64af
+    Port:           <none>
+    Host Port:      <none>
+    State:          Running
+      Started:      Wed, 29 Apr 2020 04:49:51 +0800
+    Ready:          True
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from default-token-vdvp2 (ro)
+Conditions:
+  Type              Status
+  Initialized       True 
+  Ready             True 
+  ContainersReady   True 
+  PodScheduled      True 
+........................................
+
+[root@knode-01 ~]# kubectl set image deployments/kubernetes-bootcamp kubernetes-bootcamp=docker.io/jocatalin/kubernetes-bootcamp:v2
+deployment.apps/kubernetes-bootcamp image updated
+
+[root@knode-01 ~]# kubectl get pods
+NAME                                    READY   STATUS        RESTARTS   AGE
+kubernetes-bootcamp-788f6654fc-b6bsg    1/1     Terminating   0          20m
+kubernetes-bootcamp-788f6654fc-fbgkl    1/1     Terminating   0          5m48s
+kubernetes-bootcamp-788f6654fc-gqlq8    1/1     Terminating   0          5m48s
+kubernetes-bootcamp-788f6654fc-rq8gn    1/1     Terminating   0          5m48s
+kubernetes-bootcamp-85c48dc54d-fv8b9    1/1     Running       0          10s
+kubernetes-bootcamp-85c48dc54d-qwp6c    1/1     Running       0          20s
+kubernetes-bootcamp-85c48dc54d-x4qdv    1/1     Running       0          20s
+kubernetes-bootcamp-85c48dc54d-xkhgk    1/1     Running       0          11s
+kubernetes-bootcamp4-6b8945cdcc-hmxc4   1/1     Running       1          19d
+
+root@knode-01 ~]# kubectl describe services/kubernetes-bootcamp
+Name:                     kubernetes-bootcamp
+Namespace:                default
+Labels:                   app=kubernetes-bootcamp
+Annotations:              <none>
+Selector:                 app=kubernetes-bootcamp
+Type:                     NodePort
+IP:                       10.99.83.174
+Port:                     <unset>  8080/TCP
+TargetPort:               8080/TCP
+NodePort:                 <unset>  31075/TCP
+Endpoints:                10.244.0.4:8080,10.244.0.5:8080,10.244.0.5:8080 + 1 more...
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+[root@knode-01 ~]# curl http://192.168.107.138:31075
+Hello Kubernetes bootcamp! | Running on: kubernetes-bootcamp-85c48dc54d-xkhgk | v=2
+
+[root@knode-01 ~]# kubectl rollout status deployments/kubernetes-bootcamp
+deployment "kubernetes-bootcamp" successfully rolled out
+
+[root@knode-01 ~]# kubectl describe pods
+Name:         kubernetes-bootcamp-85c48dc54d-fv8b9
+Namespace:    default
+Priority:     0
+Node:         knode-03/192.168.107.138
+Start Time:   Wed, 29 Apr 2020 05:01:23 +0800
+Labels:       app=kubernetes-bootcamp
+              pod-template-hash=85c48dc54d
+Annotations:  <none>
+Status:       Running
+IP:           10.244.0.6
+IPs:
+  IP:           10.244.0.6
+Controlled By:  ReplicaSet/kubernetes-bootcamp-85c48dc54d
+Containers:
+  kubernetes-bootcamp:
+    Container ID:   docker://6b2689270395ac3ab4c318e5fa846e155cd9292c21bbdeec0832620e8f2d7eb5
+    Image:          docker.io/jocatalin/kubernetes-bootcamp:v2
+    Image ID:       docker-pullable://jocatalin/kubernetes-bootcamp@sha256:fb1a3ced00cecfc1f83f18ab5cd14199e30adc1b49aa4244f5d65ad3f5feb2a5
+............................................
+
+
+[root@knode-01 ~]# kubectl set image deployments/kubernetes-bootcamp kubernetes-bootcamp=docker.io/jocatalin/kubernetes-bootcamp:v10
+deployment.apps/kubernetes-bootcamp image updated
+
+
+[root@knode-01 ~]# kubectl get deployments
+NAME                  READY   UP-TO-DATE   AVAILABLE   AGE
+kubernetes-bootcamp   3/4     2            3           33m
+
+
+[root@knode-01 ~]# kubectl get pods
+NAME                                    READY   STATUS              RESTARTS   AGE
+kubernetes-bootcamp-854f5d5f9f-qbjn8    0/1     ImagePullBackOff    0          44s
+kubernetes-bootcamp-854f5d5f9f-r5rnh    0/1     ContainerCreating   0          44s
+kubernetes-bootcamp-85c48dc54d-qwp6c    1/1     Running             0          14m
+kubernetes-bootcamp-85c48dc54d-x4qdv    1/1     Running             0          14m
+kubernetes-bootcamp-85c48dc54d-xkhgk    1/1     Running             0          14m
+kubernetes-bootcamp4-6b8945cdcc-hmxc4   1/1     Running             1          19d
+
+[root@knode-01 ~]# kubectl describe pods
+Name:         kubernetes-bootcamp-854f5d5f9f-qbjn8
+Namespace:    default
+Priority:     0
+Node:         knode-02/192.168.107.137
+Start Time:   Wed, 29 Apr 2020 05:14:54 +0800
+Labels:       app=kubernetes-bootcamp
+              pod-template-hash=854f5d5f9f
+Annotations:  <none>
+Status:       Pending
+IP:           10.244.0.6
+IPs:
+  IP:           10.244.0.6
+Controlled By:  ReplicaSet/kubernetes-bootcamp-854f5d5f9f
+Containers:
+  kubernetes-bootcamp:
+    Container ID:   
+    Image:          docker.io/jocatalin/kubernetes-bootcamp:v10
+............
+
+
+[root@knode-01 ~]# kubectl rollout undo deployments/kubernetes-bootcamp
+deployment.apps/kubernetes-bootcamp rolled back
+
+
+
+[root@knode-01 ~]# kubectl get pods
+NAME                                    READY   STATUS    RESTARTS   AGE
+kubernetes-bootcamp-85c48dc54d-nzjxt    1/1     Running   0          30s
+kubernetes-bootcamp-85c48dc54d-qwp6c    1/1     Running   0          17m
+kubernetes-bootcamp-85c48dc54d-x4qdv    1/1     Running   0          17m
+kubernetes-bootcamp-85c48dc54d-xkhgk    1/1     Running   0          16m
+kubernetes-bootcamp4-6b8945cdcc-hmxc4   1/1     Running   1          19d
+
+
+[root@knode-01 ~]# kubectl describe pods
+Name:         kubernetes-bootcamp-85c48dc54d-nzjxt
+Namespace:    default
+Priority:     0
+Node:         knode-02/192.168.107.137
+Start Time:   Wed, 29 Apr 2020 05:17:48 +0800
+Labels:       app=kubernetes-bootcamp
+              pod-template-hash=85c48dc54d
+Annotations:  <none>
+Status:       Running
+IP:           10.244.0.8
+IPs:
+  IP:           10.244.0.8
+Controlled By:  ReplicaSet/kubernetes-bootcamp-85c48dc54d
+Containers:
+  kubernetes-bootcamp:
+    Container ID:   docker://8ee60e5b1357734ce6202515107d0c36017102835bf477d1446d7a5663cdcfda
+    Image:          docker.io/jocatalin/kubernetes-bootcamp:v2
+
+
+
+
+显示有关 ReplicaSet 对象的信息
+[root@knode-01 ~]# kubectl get replicasets
+NAME                             DESIRED   CURRENT   READY   AGE
+kubernetes-bootcamp-788f6654fc   0         0         0       12h
+kubernetes-bootcamp-854f5d5f9f   0         0         0       12h
+kubernetes-bootcamp-85c48dc54d   4         4         4       12h
+
+
+[root@knode-01 ~]# kubectl describe replicasets
+Name:           kubernetes-bootcamp-788f6654fc
+Namespace:      default
+Selector:       app=kubernetes-bootcamp,pod-template-hash=788f6654fc
+Labels:         app=kubernetes-bootcamp
+                pod-template-hash=788f6654fc
+Annotations:    deployment.kubernetes.io/desired-replicas: 4
+                deployment.kubernetes.io/max-replicas: 5
+                deployment.kubernetes.io/revision: 1
+Controlled By:  Deployment/kubernetes-bootcamp
+Replicas:       0 current / 0 desired
+Pods Status:    0 Running / 0 Waiting / 0 Succeeded / 0 Failed
+Pod Template:
+  Labels:  app=kubernetes-bootcamp
+           pod-template-hash=788f6654fc
+  Containers:
+   kubernetes-bootcamp:
+    Image:        docker.io/jocatalin/kubernetes-bootcamp:v1
+    Port:         <none>
+    Host Port:    <none>
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Events:           <none>
+
+
+Name:           kubernetes-bootcamp-854f5d5f9f
+Namespace:      default
+Selector:       app=kubernetes-bootcamp,pod-template-hash=854f5d5f9f
+Labels:         app=kubernetes-bootcamp
+                pod-template-hash=854f5d5f9f
+Annotations:    deployment.kubernetes.io/desired-replicas: 4
+                deployment.kubernetes.io/max-replicas: 5
+                deployment.kubernetes.io/revision: 3
+Controlled By:  Deployment/kubernetes-bootcamp
+Replicas:       0 current / 0 desired
+Pods Status:    0 Running / 0 Waiting / 0 Succeeded / 0 Failed
+Pod Template:
+  Labels:  app=kubernetes-bootcamp
+           pod-template-hash=854f5d5f9f
+  Containers:
+   kubernetes-bootcamp:
+    Image:        docker.io/jocatalin/kubernetes-bootcamp:v10
+    Port:         <none>
+    Host Port:    <none>
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Events:           <none>
+
+
+Name:           kubernetes-bootcamp-85c48dc54d
+Namespace:      default
+Selector:       app=kubernetes-bootcamp,pod-template-hash=85c48dc54d
+Labels:         app=kubernetes-bootcamp
+                pod-template-hash=85c48dc54d
+Annotations:    deployment.kubernetes.io/desired-replicas: 4
+                deployment.kubernetes.io/max-replicas: 5
+                deployment.kubernetes.io/revision: 4
+                deployment.kubernetes.io/revision-history: 2
+Controlled By:  Deployment/kubernetes-bootcamp
+Replicas:       4 current / 4 desired
+Pods Status:    4 Running / 0 Waiting / 0 Succeeded / 0 Failed
+Pod Template:
+  Labels:  app=kubernetes-bootcamp
+           pod-template-hash=85c48dc54d
+  Containers:
+   kubernetes-bootcamp:
+    Image:        docker.io/jocatalin/kubernetes-bootcamp:v2
+    Port:         <none>
+    Host Port:    <none>
+    Environment:  <none>
+    Mounts:       <none>
+  Volumes:        <none>
+Events:           <none>
+
+
+
+
+
+
+
+
+
+
+# 安装kubenates dashboard   未完成
+https://github.com/kubernetes/dashboard/blob/master/docs/user/installation.md
+国内网络有点问题 首先上https://site.ip138.com/raw.githubusercontent.com/ 解析raw.githubusercontent.com的IP地址
+我选用了香港的地址 修改/etc/hosts文件
+追加 151.101.76.133 raw.githubusercontent.com
+
+wget https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0/aio/deploy/recommended.yaml
+
+修改recommended.yaml 中 关于 Service 增加 Nodeport
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+spec:
+  ports:
+    - nodePort: 8500
+      port: 443
+      targetPort: 8443
+  selector:
+    k8s-app: kubernetes-dashboard
+
+---
+
+
+[root@knode-01 ~]# kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0/aio/deploy/recommended.yaml
+namespace/kubernetes-dashboard created
+serviceaccount/kubernetes-dashboard created
+service/kubernetes-dashboard created
+secret/kubernetes-dashboard-certs created
+secret/kubernetes-dashboard-csrf created
+secret/kubernetes-dashboard-key-holder created
+configmap/kubernetes-dashboard-settings created
+role.rbac.authorization.k8s.io/kubernetes-dashboard created
+clusterrole.rbac.authorization.k8s.io/kubernetes-dashboard created
+rolebinding.rbac.authorization.k8s.io/kubernetes-dashboard created
+clusterrolebinding.rbac.authorization.k8s.io/kubernetes-dashboard created
+deployment.apps/kubernetes-dashboard created
+service/dashboard-metrics-scraper created
+deployment.apps/dashboard-metrics-scraper created
+
+[root@knode-01 ~]# kubectl get deployments --namespace=kubernetes-dashboard
+NAME                        READY   UP-TO-DATE   AVAILABLE   AGE
+dashboard-metrics-scraper   1/1     1            1           12m
+kubernetes-dashboard        0/1     1            0           12m
+
+[root@knode-01 ~]# kubectl get pods --namespace=kubernetes-dashboard
+NAME                                         READY   STATUS             RESTARTS   AGE
+dashboard-metrics-scraper-6b4884c9d5-tjnqj   1/1     Running            0          13m
+kubernetes-dashboard-7b544877d5-qkrw5        0/1     CrashLoopBackOff   6          13m
+
+[root@knode-01 ~]# kubectl get services --namespace=kubernetes-dashboard
+NAME                        TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+dashboard-metrics-scraper   ClusterIP   10.101.208.20   <none>        8000/TCP   14m
+kubernetes-dashboard        ClusterIP   10.96.186.52    <none>        443/TCP    14m
+
+[root@knode-01 ~]# kubectl get services --all-namespaces
+NAMESPACE              NAME                        TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                  AGE
+default                kuard-config                NodePort    10.100.122.198   <none>        8080:31789/TCP           12h
+default                kubernetes                  ClusterIP   10.96.0.1        <none>        443/TCP                  201d
+default                nginx                       NodePort    10.102.13.36     <none>        80:30597/TCP             13h
+kube-system            kube-dns                    ClusterIP   10.96.0.10       <none>        53/UDP,53/TCP,9153/TCP   201d
+kubernetes-dashboard   dashboard-metrics-scraper   ClusterIP   10.108.53.164    <none>        8000/TCP                 4m1s
+kubernetes-dashboard   kubernetes-dashboard        NodePort    10.99.249.188    <none>        443:30564/TCP            4m1s
+
+[root@knode-02 ~]# tcpdump port 30564 -i ens33 -vvv
+tcpdump: listening on ens33, link-type EN10MB (Ethernet), capture size 262144 bytes
+05:37:44.202444 IP (tos 0x0, ttl 128, id 17568, offset 0, flags [DF], proto TCP (6), length 52)
+    192.168.107.1.ndl-aps > knode-02.30564: Flags [S], cksum 0x21e0 (correct), seq 3622018819, win 64240, options [mss 1460,nop,wscale 8,nop,nop,sackOK], length 0
+05:37:44.202573 IP (tos 0x0, ttl 128, id 17569, offset 0, flags [DF], proto TCP (6), length 52)
+    192.168.107.1.3097 > knode-02.30564: Flags [S], cksum 0xb24e (correct), seq 3301777834, win 64240, options [mss 1460,nop,wscale 8,nop,nop,sackOK], length 0
+05:37:44.454121 IP (tos 0x0, ttl 128, id 17572, offset 0, flags [DF], proto TCP (6), length 52)
+
+[root@knode-01 yaml]# kubectl get service --all-namespaces -o wide
+NAMESPACE              NAME                        TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                  AGE    SELECTOR
+default                kuard-config                NodePort    10.100.122.198   <none>        8080:31789/TCP           13h    app=kuard-config
+default                kubernetes                  ClusterIP   10.96.0.1        <none>        443/TCP                  201d   <none>
+default                nginx                       NodePort    10.102.13.36     <none>        80:30597/TCP             13h    app=nginx
+kube-system            kube-dns                    ClusterIP   10.96.0.10       <none>        53/UDP,53/TCP,9153/TCP   201d   k8s-app=kube-dns
+kubernetes-dashboard   dashboard-metrics-scraper   ClusterIP   10.107.33.110    <none>        8000/TCP                 50s    k8s-app=dashboard-metrics-scraper
+kubernetes-dashboard   kubernetes-dashboard        NodePort    10.106.210.52    <none>        443:32112/TCP            50s    k8s-app=kubernetes-dashboard
+[root@knode-01 yaml]# kubectl get pods --all-namespaces -o wide
+NAMESPACE              NAME                                         READY   STATUS    RESTARTS   AGE    IP                NODE       NOMINATED NODE   READINESS GATES
+kubernetes-dashboard   dashboard-metrics-scraper-6b4884c9d5-c48j7   1/1     Running   0          78s    10.244.0.54       knode-02   <none>           <none>
+kubernetes-dashboard   kubernetes-dashboard-7d8574ffd9-rlvzz        1/1     Running   1          78s    10.244.0.35       knode-03   <none>           <none>
+[root@knode-01 yaml]# kubectl  logs kubernetes-dashboard-7d8574ffd9-rlvzz -n kubernetes-dashboard
+2020/10/27 22:09:20 Starting overwatch
+2020/10/27 22:09:20 Using namespace: kubernetes-dashboard
+2020/10/27 22:09:20 Using in-cluster config to connect to apiserver
+2020/10/27 22:09:20 Using secret token for csrf signing
+2020/10/27 22:09:20 Initializing csrf token from kubernetes-dashboard-csrf secret
+
+[root@knode-01 yaml]# kubectl get secret -n kubernetes-dashboard
+NAME                               TYPE                                  DATA   AGE
+default-token-46k7x                kubernetes.io/service-account-token   3      9s
+kubernetes-dashboard-csrf          Opaque                                1      9s
+kubernetes-dashboard-key-holder    Opaque                                0      9s
+kubernetes-dashboard-token-xx77p   kubernetes.io/service-account-token   3      9s
+
+
+
+# kuard 练习
+[root@knode-01 yaml]# kubectl apply -f kuard-pod.yaml 
+[root@knode-01 yaml]# kubectl get pods
+NAME                                    READY   STATUS    RESTARTS   AGE
+kuard                                   1/1     Running   0          3m24s
+
+[root@knode-01 yaml]# kubectl describe pods kuard
+Name:         kuard
+Namespace:    default
+Priority:     0
+Node:         knode-02/192.168.107.137
+Start Time:   Fri, 25 Sep 2020 10:58:09 +0800
+Labels:       <none>
+Annotations:  Status:  Running
+IP:           10.244.0.27
+IPs:
+  IP:  10.244.0.27
+Containers:
+  kuard:
+    Container ID:   docker://ca678ff3548e4193e18d81a88e827834501395a6c1ab456b5c2a846d12d241ad
+    Image:          docker.io/dlneintr/kuard:latest
+    Image ID:       docker-pullable://dlneintr/kuard@sha256:b75431a757b55bfd00dd2f07b195656ee20f4ae3c2c681279c30ee54b812233f
+    Port:           8080/TCP
+    Host Port:      0/TCP
+    State:          Running
+      Started:      Fri, 25 Sep 2020 10:58:23 +0800
+    Ready:          True
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from default-token-vdvp2 (ro)
+Conditions:
+  Type              Status
+  Initialized       True 
+  Ready             True 
+  ContainersReady   True 
+  PodScheduled      True 
+Volumes:
+  default-token-vdvp2:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  default-token-vdvp2
+    Optional:    false
+QoS Class:       BestEffort
+Node-Selectors:  <none>
+Tolerations:     node.kubernetes.io/not-ready:NoExecute for 300s
+                 node.kubernetes.io/unreachable:NoExecute for 300s
+Events:
+  Type    Reason     Age        From               Message
+  ----    ------     ----       ----               -------
+  Normal  Scheduled  <unknown>  default-scheduler  Successfully assigned default/kuard to knode-02
+  Normal  Pulling    5m44s      kubelet, knode-02  Pulling image "docker.io/dlneintr/kuard:latest"
+  Normal  Pulled     5m31s      kubelet, knode-02  Successfully pulled image "docker.io/dlneintr/kuard:latest"
+  Normal  Created    5m31s      kubelet, knode-02  Created container kuard
+  Normal  Started    5m31s      kubelet, knode-02  Started container kuard
+
+删除pods
+[root@knode-01 yaml]# kubectl delete pods/kuard
+pod "kuard" deleted
+
+或者也可以 kubectl delete -f kuard-pod.yaml
+
+访问pods 
+端口转发
+[root@knode-01 yaml]# kubectl port-forward kuard 8080:8080
+Forwarding from 127.0.0.1:8080 -> 8080
+Forwarding from [::1]:8080 -> 8080
+
+Handling connection for 8080
+
+# 增加活性探针  详见kuard-pod-health.yaml文件
+ kubectl apply -f kuard-pod-health.yaml
+pod/kuard created
+[root@knode-01 yaml]# kubectl get pods
+NAME                                   READY   STATUS    RESTARTS   AGE
+kuard                                  1/1     Running   0          8s
+
+
+
+
+kubectl port-forward <pod_name> <forward_port> --namespace <namespace> --address <IP默认：127.0.0.1>
+[root@knode-01 yaml]# kubectl port-forward kuard 8080:8080 --address 192.168.107.136
+Forwarding from 192.168.107.136:8080 -> 8080
+
+或者
+
+[root@knode-01 yaml]# kubectl port-forward kuard 8080:8080
+Forwarding from 127.0.0.1:8080 -> 8080
+Forwarding from [::1]:8080 -> 8080
+
+[root@knode-01 ~]# netstat -tlunp|grep 8080
+tcp        0      0 127.0.0.1:8080          0.0.0.0:*               LISTEN      125896/kubectl      
+tcp6       0      0 ::1:8080                :::*                    LISTEN      125896/kubectl   
+
+[root@knode-01 ~]# curl http://localhost:8080
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <title>KUAR Demo</title>
+。。。。。
+
+Events:
+  Type     Reason     Age                From               Message
+  ----     ------     ----               ----               -------
+  Normal   Scheduled  11m                default-scheduler  Successfully assigned default/kuard to knode-02
+  Normal   Pulling    22s (x2 over 11m)  kubelet, knode-02  Pulling image "docker.io/dlneintr/kuard:latest"
+  Warning  Unhealthy  22s (x3 over 42s)  kubelet, knode-02  Liveness probe failed: HTTP probe failed with statuscode: 500
+  Normal   Killing    22s                kubelet, knode-02  Container kuard failed liveness probe, will be restarted
+
+[root@knode-01 ~]# kubectl get pods  kuard
+NAME    READY   STATUS    RESTARTS   AGE
+kuard   1/1     Running   1          12m
+
+
+# 就绪探针 后续实验 现在跳过
+
+# 资源请求  所需资源下限
+该容器位于一个CPU半闲置的机器上，并分配128m的内存
+[root@knode-01 yaml]# kubectl delete pods kuard
+pod "kuard" deleted
+[root@knode-01 yaml]# kubectl apply -f kuard-pod-resreq.yaml 
+pod/kuard created
+[root@knode-01 yaml]# kubectl get pods
+NAME                                   READY   STATUS    RESTARTS   AGE
+kuard                                  1/1     Running   0          6s
+
+
+
+# 资源限制
+[root@knode-01 yaml]# kubectl delete pods kuard
+pod "kuard" deleted
+
+[root@knode-01 yaml]# kubectl describe pods kuard
+Name:         kuard
+Namespace:    default
+Priority:     0
+
+。。。
+
+    Limits:
+      cpu:     1
+      memory:  256Mi
+    Requests:
+      cpu:        500m
+      memory:     128Mi
+
+# 利用卷实现数据持久化、
+[root@knode-01 yaml]# kubectl apply -f kuard-pod-vol.yaml 
+
+#pod使用卷的不同方式
+1.通信/ 同步
+使用emptyDir 卷的有效期限于该pod寿命相当
+2.缓存
+3.持久性数据
+4.挂载主机文件系统
+
+
+#与pods交互
+kubectl exec [POD] -- [COMMAND]
+kubectl exec -it kuard -- /bin/sh
+kubectl exec kuard ls /var/lib/
+
+
+# 创建configmap
+kubectl create configmap my-config --from-file=my-config.txt --from-literal=extra-param=extra-value --from-literal=another-param=another-value
+configmap/my-config created
+## 获取configmap
+[root@knode-01 yaml]# kubectl get configmap my-config -o yaml
+apiVersion: v1
+data:
+  another-param: another-value
+  extra-param: extra-value
+  my-config.txt: |+
+    # This is a sample config file that I might use to configure an application
+    parameter1 = value1
+    parameter2 = value2
+
+kind: ConfigMap
+metadata:
+  creationTimestamp: "2020-10-26T14:10:35Z"
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:another-param: {}
+        f:extra-param: {}
+        f:my-config.txt: {}
+    manager: kubectl
+    operation: Update
+    time: "2020-10-26T14:10:35Z"
+  name: my-config
+  namespace: default
+  resourceVersion: "773348"
+  selfLink: /api/v1/namespaces/default/configmaps/my-config
+  uid: a13b103d-d607-4749-85ee-cba51f7ac672
+
+#configmap的用法主要有3种
+- 文件系统
+- 环境变量
+- 命令行参数
+
+
+#service 无法访问nodeport
+iptables -P FORWARD ACCEPT
+
+
+[root@knode-01 yaml]# kubectl describe services kuard-config-frontend
+Name:                     kuard-config-frontend
+Namespace:                default
+Labels:                   app=kuard-config
+                          tier=kuard-config
+Annotations:              Selector:  app=kuard-config
+Type:                     NodePort
+IP:                       10.99.236.214
+Port:                     <unset>  8080/TCP
+TargetPort:               8080/TCP
+NodePort:                 <unset>  32680/TCP
+Endpoints:                10.244.0.36:8080
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+
+[root@knode-01 yaml]# iptables-save|grep 32354
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/kuard-config-frontend:" -m tcp --dport 32354 -j KUBE-MARK-MASQ
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/kuard-config-frontend:" -m tcp --dport 32354 -j KUBE-SVC-CZ6DXG7527ZN6I2D
+
+
+
+
+ServiceType字段的合法值是：
+
+l  ClusterIP: 仅仅使用一个集群内部的IP地址 - 这是默认值。选择这个值意味着你只想这个服务在集群内部才可以被访问到。
+
+l  NodePort: 在集群内部IP的基础上，在集群的每一个节点的端口上开放这个服务。你可以在任意<NodeIP>:NodePort地址上访问到这个服务。
+
+l  LoadBalancer: 在使用一个集群内部IP地址和在NodePort上开放一个服务之外，向云提供商申请一个负载均衡器，会让流量转发到这个在每个节点上以<NodeIP>:NodePort的形式开放的服务上。
+
+在使用一个集群内部IP地址和在NodePort上开放一个Service的基础上，还可以向云提供者申请一个负载均衡器，将流量转发到已经以NodePort形式开发的Service上。
+
+
+#DNS
+[root@knode-01 yaml]# kubectl --namespace=kube-system get deployment
+NAME      READY   UP-TO-DATE   AVAILABLE   AGE
+coredns   2/2     2            2           200d
+
+服务、负载均衡和联网
+Kubernetes 网络解决四方面的问题：
+
+一个 Pod 中的容器之间通过本地回路（loopback）通信。
+集群网络在不同 pod 之间提供通信。
+Service 资源允许你对外暴露 Pods 中运行的应用程序，以支持来自于集群外部的访问。
+可以使用 Services 来发布仅供集群内部使用的服务。
+
+
+# 获取集群信息
+[root@knode-01 ~]# kubectl cluster-info
+Kubernetes master is running at https://192.168.107.136:6443
+KubeDNS is running at https://192.168.107.136:6443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+# nginx deployments
+[root@knode-01 yaml]# kubectl run nginx --image=nginx:1.7.12
+
+[root@knode-01 yaml]# kubectl create deployment nginx --image=nginx:1.7.12   # 创建一个nginx的deployment
+deployment.apps/nginx created
+[root@knode-01 yaml]# kubectl get deployments nginx  #获取nginx的部署
+NAME    READY   UP-TO-DATE   AVAILABLE   AGE
+nginx   1/1     1            1           15s
+[root@knode-01 yaml]# kubectl get deployments nginx -o jsonpath --template {.spec.selector.matchLabels}     # 查看该部署匹配的标签
+map[app:nginx]
+[root@knode-01 yaml]# kubectl get replicasets --selector=app=nginx   # 获取nginx部署的replicasets
+NAME              DESIRED   CURRENT   READY   AGE
+nginx-b44bb7fbd   1         1         1       8m27s
+[root@knode-01 yaml]# kubectl scale deployments nginx --replicas=2
+deployment.apps/nginx scaled
+[root@knode-01 yaml]# kubectl get replicasets --selector=app=nginx
+NAME              DESIRED   CURRENT   READY   AGE
+nginx-b44bb7fbd   2         2         2       13m
+
+[root@knode-01 yaml]# kubectl get deployments nginx --export -o yaml > nginx-deployment.yaml  # 通过deployment 生成一个yaml文件
+Flag --export has been deprecated, This flag is deprecated and will be removed in future.
+[root@knode-01 yaml]# kubectl replace -f nginx-deployment.yaml --save-config
+deployment.apps/nginx replaced
+[root@knode-01 yaml]# vim nginx-deployment.yaml 
+
+
+[root@knode-01 yaml]# kubectl apply -f nginx-deployment.yaml   # 通过修改yaml文件升级
+deployment.apps/nginx configured
+[root@knode-01 yaml]# kubectl rollout status deployments nginx
+Waiting for deployment "nginx" rollout to finish: 1 out of 3 new replicas have been updated...
+Waiting for deployment "nginx" rollout to finish: 1 out of 3 new replicas have been updated...
+Waiting for deployment "nginx" rollout to finish: 1 out of 3 new replicas have been updated...
+Waiting for deployment "nginx" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "nginx" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "nginx" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "nginx" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "nginx" rollout to finish: 1 old replicas are pending termination...
+deployment "nginx" successfully rolled out
+[root@knode-01 yaml]# 
+
+[root@knode-01 yaml]# kubectl get replicasets -o wide  #查看升级 replicasets
+NAME              DESIRED   CURRENT   READY   AGE     CONTAINERS   IMAGES         SELECTOR
+nginx-64f597fff   3         3         3       2m42s   nginx        nginx:1.9.10   app=nginx,pod-template-hash=64f597fff
+nginx-b44bb7fbd   0         0         0       6h4m    nginx        nginx:1.7.12   app=nginx,pod-template-hash=b44bb7fbd
+
+
+[root@knode-01 yaml]# kubectl rollout history deployment nginx # 查看升级历史
+deployment.apps/nginx 
+REVISION  CHANGE-CAUSE
+1         <none>
+2         Update nginx to 1.9.10
+
+[root@knode-01 yaml]# kubectl rollout history deployment nginx --revision=2  #查看升级详细信息
+deployment.apps/nginx with revision #2
+Pod Template:
+  Labels:	app=nginx
+	pod-template-hash=64f597fff
+  Annotations:	kubernetes.io/change-cause: Update nginx to 1.9.10
+  Containers:
+   nginx:
+    Image:	nginx:1.9.10
+    Port:	<none>
+    Host Port:	<none>
+    Environment:	<none>
+    Mounts:	<none>
+  Volumes:	<none>
+
+
+[root@knode-01 yaml]# kubectl get replicasets -o wide    # 回滚操作
+NAME              DESIRED   CURRENT   READY   AGE    CONTAINERS   IMAGES         SELECTOR
+nginx-64f597fff   0         0         0       8m9s   nginx        nginx:1.9.10   app=nginx,pod-template-hash=64f597fff
+nginx-b44bb7fbd   3         3         3       6h9m   nginx        nginx:1.7.12   app=nginx,pod-template-hash=b44bb7fbd
+
+
+[root@knode-01 yaml]# kubectl rollout history deployment nginx   # 再次查看历史
+deployment.apps/nginx 
+REVISION  CHANGE-CAUSE
+2         Update nginx to 1.9.10
+3         <none>
+
+[root@knode-01 yaml]# kubectl rollout undo  deployment nginx  --to-revision=2  # 通过revision 指定响应的版本
+deployment.apps/nginx rolled back
+[root@knode-01 yaml]# kubectl rollout history deployment nginx 
+deployment.apps/nginx 
+REVISION  CHANGE-CAUSE
+3         <none>
+4         Update nginx to 1.9.10
+
+
+
+# 查看iptables 转发规则
+[root@knode-01 yaml]# iptables -nL -t nat -v
+
+# 临时命令
+kubectl -n kubernetes-dashboard create secret tls dashboard-ingress-secret --cert=tls.crt --key=tls.key
+kubectl create ns kubernetes-dashboard
+dash_tocken=$(kubectl get secret -n kubernetes-dashboard kubernetes-dashboard-token-nw9ff -o jsonpath={.data.token}|base64 -d)
+kubectl config set-cluster kubernetes --server=192.168.107.136:6443 --kubeconfig=./dashboard-admin.conf
+kubectl config set-credentials dashboard-admin --token=$dash_tocken --kubeconfig=./dashboard-admin.conf
+kubectl config set-context dashboard-admin@kubernetes --cluster=kubernetes --user=dashboard-admin --kubeconfig=./dashboard-admin.conf
+kubectl config use-context dashboard-admin@kubernetes --kubeconfig=./dashboard-admin.conf
+
+# 创建用户
+kubectl create sa yuzhiyi -n kube-system
+
+
+# 证书命令
+openssl genrsa -out tls.key 2048
+openssl req -new -x509 -key tls.key -out tls.crt -subj /C=CN/ST=Shanghai/L=Shanghai/O=DevOps/CN=dashboard.00joy.com
+kubectl -n kubernetes-dashboard create secret tls dashboard-ingress-secret --cert=tls.crt --key=tls.key
+
+# config view
+[root@knode-01 yaml]# kubectl config view
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: DATA+OMITTED
+    server: https://192.168.107.136:6443
+  name: kubernetes
+contexts:
+- context:
+    cluster: kubernetes
+    user: kubernetes-admin
+  name: kubernetes-admin@kubernetes
+current-context: kubernetes-admin@kubernetes
+kind: Config
+preferences: {}
+users:
+- name: kubernetes-admin
+  user:
+    client-certificate-data: REDACTED
+    client-key-data: REDACTED
+
+
+# 域名的解析
+[root@knode-01 tmp]# kubectl get service
+NAME           TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
+kuard-config   NodePort    10.100.122.198   <none>        8080:31789/TCP   35h
+kubernetes     ClusterIP   10.96.0.1        <none>        443/TCP          202d
+nginx          NodePort    10.102.13.36     <none>        80:30597/TCP     36h
+[root@knode-01 tmp]# kubectl exec -it kuard-config-6b79545c7f-sq5dk nslookup nginx
+kubectl exec [POD] [COMMAND] is DEPRECATED and will be removed in a future version. Use kubectl kubectl exec [POD] -- [COMMAND] instead.
+nslookup: can't resolve '(null)': Name does not resolve
+
+Name:      nginx
+Address 1: 10.102.13.36 nginx.default.svc.cluster.local
+
+
+
+
