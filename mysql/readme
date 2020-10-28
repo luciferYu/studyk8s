@@ -1,0 +1,17 @@
+capacity
+
+用于定义PV的存储容量，当前只支持定义大小，未来会实现其他能力如：IOPS、吞吐量。
+
+accessModes
+
+用于定义资源的访问方式，受限于存储底层的支持，访问方式包括以下几种：
+ReadWriteOnce – 被单个节点mount为读写rw模式
+ReadOnlyMany – 被多个节点mount为只读ro模式
+ReadWriteMany – 被多个节点mount为读写rw模式
+
+persistentVolumeReclaimPolicy
+
+用于定义资源的回收方式，也首先与存储底层的支持，现有的回收策略：
+Retain – 手动回收
+Recycle – 删除数据 (“rm -rf /thevolume/*”)
+Delete – 通过存储后端删除卷，后端存储例如AWS EBS, GCE PD或Cinder等。
