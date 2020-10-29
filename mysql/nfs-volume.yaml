@@ -10,6 +10,11 @@ spec:
   nfs:
     server: 192.168.107.136
     path: "/exports"
+  volumeMode: Filesystem
   accessModes:
-  - ReadWriteOnce
+    - ReadWriteOnce
   persistentVolumeReclaimPolicy: Recycle
+  storageClassName: slow
+  mountOptions:
+    - hard
+    - nfsvers=4.1

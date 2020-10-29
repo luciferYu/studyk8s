@@ -15,3 +15,11 @@ persistentVolumeReclaimPolicy
 Retain – 手动回收
 Recycle – 删除数据 (“rm -rf /thevolume/*”)
 Delete – 通过存储后端删除卷，后端存储例如AWS EBS, GCE PD或Cinder等。
+
+
+
+yum -y install nfs-common nfs-utils
+[root@knode-01 mysql]# cat /etc/exports
+/exports 192.168.0.0/16(rw,no_root_squash,sync)
+exportfs -rv
+

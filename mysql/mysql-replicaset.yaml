@@ -17,11 +17,11 @@ spec:
     spec:
       containers:
       - name: database
-        image: mysql
-        #resources:
-        #  requests:
-        #    cpu: 1
-        #    memory: 2Gi
+        image: mysql:5.7.32
+        resources:
+          requests:
+            cpu: 1
+            memory: 2Gi
         ports:
         - containerPort: 3306
         env:
